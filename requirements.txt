@@ -1,0 +1,11 @@
+# Core
+web3>=6.0.0
+python-dotenv>=1.0.0
+asyncio>=3.4.3
+aiohttp>=3.8.0
+
+# UI/Logging
+rich>=13.0.0
+
+# Optional but recommended for faster websocket RPC
+websockets>=11.0
