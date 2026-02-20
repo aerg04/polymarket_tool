@@ -10,3 +10,5 @@ rich>=13.0.0
 # Optional but recommended for faster websocket RPC
 websockets>=11.0
 aiosqlite>=0.19.0
+py-clob-client
+requests

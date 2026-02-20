@@ -2,6 +2,7 @@ import aiosqlite
 import asyncio
 from rich.console import Console
 from datetime import datetime
+import hashlib
 
 DB_NAME = "polymarket_bot.db"
 console = Console()
@@ -73,20 +74,15 @@ class Database:
             console.print(f"[red]✘ Database init failed: {e}[/red]")
 
     @staticmethod
-    async def log_whale_activity(wallet, title, outcome, side, size, price, timestamp):
+    async def log_whale_activity(wallet, condition_id, title, outcome, side, size, price, timestamp):
         """Inserts a whale trade into the database."""
-        # Using a hashed condition_id based on title if not available, 
-        # or assuming the caller will eventually pass real IDs.
-        # For now, we will create a consistent dummy ID from the title to link tables
-        import hashlib
-        dummy_cond_id = hashlib.md5(title.encode()).hexdigest()
         
         async with aiosqlite.connect(DB_NAME) as db:
             # 1. Ensure Market Exists
             await db.execute("""
                 INSERT OR IGNORE INTO markets (condition_id, title, last_price, last_updated)
                 VALUES (?, ?, ?, ?)
-            """, (dummy_cond_id, title, price, timestamp))
+            """, (condition_id, title, price, timestamp))
 
             # 2. Ensure Wallet Exists
             await db.execute("""
@@ -98,7 +94,7 @@ class Database:
             await db.execute("""
                 INSERT INTO wallet_trades (wallet_address, condition_id, outcome, side, entry_price, size_usd, timestamp)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (wallet, dummy_cond_id, outcome, side, price, size, timestamp))
+            """, (wallet, condition_id, outcome, side, price, size, timestamp))
             
             await db.commit()
-            # console.print(f"[dim]DB: Logged trade for {wallet[:6]}[/dim]")
+            console.print(f"[dim]DB: Logged trade for {wallet[:6]}[/dim]")
