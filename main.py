@@ -1,5 +1,6 @@
 import asyncio
 import sys
+import time
 from rich.console import Console
 from rich.panel import Panel
 
@@ -7,6 +8,7 @@ from src.config import Config
 from src.tracker import Tracker
 from src.notifier import Notifier
 from src.trader import Trader
+from src.database import Database
 
 console = Console()
 
@@ -27,6 +29,7 @@ async def process_whale_activity(act):
     # value = size * price
     title = act.get('title', 'Unknown Market')
     outcome = act.get('outcome', '-')
+    timestamp = int(act.get('timestamp', time.time()))
     
     # 1. Analyze the Activity
     console.print(Panel(f"Processing Activity: {act_id}", title="Whale Activity Detected", style="bold magenta"))
@@ -35,6 +38,18 @@ async def process_whale_activity(act):
     console.print(f"[cyan]🕵️  Wallet: {wallet}[/cyan]")
     console.print(f"[white]📊 Market: {title}[/white]")
     console.print(f"[green]⚡ Action: {side} {size:,.2f} shares of '{outcome}' @ ${price:.3f}[/green]")
+
+    # --- SAVE TO DB ---
+    await Database.log_whale_activity(
+        wallet=wallet, 
+        title=title, 
+        outcome=outcome, 
+        side=side, 
+        size=size, 
+        price=price,
+        timestamp=timestamp
+    )
+    # ------------------
 
     # 2. Notify
     msg = f"🐋 **WHALE ALERT**\nAddress: `{wallet}`\nAction: {side} {outcome}\nMarket: {title}\nPrice: ${price:.3f}\nSize: {size}"
@@ -53,9 +68,7 @@ async def main():
     # 1. Validate Config
     if not Config.validate():
         sys.exit(1)
-        
     # 2. Initialize Modules
-    # We pass the callback function to the tracker
     tracker = Tracker(process_transaction_callback=process_whale_activity)
     
     # 3. Start Loop
