@@ -23,6 +23,10 @@ async def process_whale_activity(act):
     # Extract data from API activity object
     act_id = act.get('id', 'unknown_id')
     wallet = act.get('wallet_address', 'unknown_wallet')
+    
+    # Extract the REAL conditionId
+    condition_id = act.get('conditionId')
+    
     side = act.get('side', 'UNKNOWN')
     size = float(act.get('size', 0))
     price = float(act.get('price', 0))
@@ -40,15 +44,22 @@ async def process_whale_activity(act):
     console.print(f"[green]⚡ Action: {side} {size:,.2f} shares of '{outcome}' @ ${price:.3f}[/green]")
 
     # --- SAVE TO DB ---
-    await Database.log_whale_activity(
-        wallet=wallet, 
-        title=title, 
-        outcome=outcome, 
-        side=side, 
-        size=size, 
-        price=price,
-        timestamp=timestamp
-    )
+    # We must ensure we have a condition_id. The API should provide it. 
+    # If using tracker.py, it is extracted as 'conditionId'.
+    if condition_id:
+        await Database.log_whale_activity(
+            wallet=wallet, 
+            condition_id=condition_id,
+            title=title, 
+            outcome=outcome, 
+            side=side, 
+            size=size, 
+            price=price,
+            timestamp=timestamp
+        )
+    else:
+        console.print("[red]⚠️ Skipping DB log: No conditionId found in activity[/red]")
+    
     # ------------------
 
     # 2. Notify
@@ -68,6 +79,7 @@ async def main():
     # 1. Validate Config
     if not Config.validate():
         sys.exit(1)
+    Database.init_db()  # Initialize the database (creates tables if not exist)
     # 2. Initialize Modules
     tracker = Tracker(process_transaction_callback=process_whale_activity)
     
