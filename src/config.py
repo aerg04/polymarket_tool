@@ -14,6 +14,11 @@ class Config:
     # Wallet
     PRIVATE_KEY = os.getenv("PRIVATE_KEY")
     MY_WALLET_ADDRESS = os.getenv("MY_WALLET_ADDRESS")
+    # 0 = EOA (MetaMask), 1 = Email/Magic, 2 = Browser Proxy
+    SIGNATURE_TYPE = int(os.getenv("SIGNATURE_TYPE", "1"))
+    # Funder address for proxy wallets, usually same as MY_WALLET_ADDRESS if using Magic Link
+    FUNDER_ADDRESS = os.getenv("FUNDER_ADDRESS", MY_WALLET_ADDRESS)
+
     
     # Target
     # Split comma-separated string into a list
@@ -22,6 +27,8 @@ class Config:
     # Polymarket API Endpoints
     POLYMARKET_CLOB_API_URL = "https://clob.polymarket.com" # For placing orders
     POLYMARKET_GAMMA_API_URL = "https://gamma-api.polymarket.com" # For looking up market names
+    POLYMARKET_DATA_API_URL = "https://data-api.polymarket.com" # For user data
+
     
     # CONTRACTS
     # The Gnosis Conditional Tokens Framework (CTF) Contract
