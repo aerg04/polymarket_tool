@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS wallets (
 -- 2. Markets (Context for the trades)
 CREATE TABLE IF NOT EXISTS markets (
     condition_id TEXT PRIMARY KEY, 
-    token_id TEXT, -- The "asset" ID from API
+    token_id_yes TEXT, -- Token ID for 'Yes' outcome
+    token_id_no TEXT, -- Token ID for 'No' outcome
     title TEXT,
     last_price REAL,
     volume_usd REAL,
@@ -68,27 +69,41 @@ class Database:
                 # -----------------------
                 
                 await db.executescript(INIT_SCRIPT)
+                
+                # Migration: Add token_id_yes and token_id_no if they don't exist
+                try:
+                    await db.execute("ALTER TABLE markets ADD COLUMN token_id_yes TEXT")
+                    console.print("[yellow]Migrated DB: Added token_id_yes column[/yellow]")
+                except Exception:
+                    pass # Column likely exists
+                
+                try:
+                    await db.execute("ALTER TABLE markets ADD COLUMN token_id_no TEXT")
+                    console.print("[yellow]Migrated DB: Added token_id_no column[/yellow]")
+                except Exception:
+                    pass # Column likely exists
+
                 await db.commit()
             console.print("[green]✔ Database initialized successfully (WAL Mode Enabled).[/green]")
         except Exception as e:
             console.print(f"[red]✘ Database init failed: {e}[/red]")
 
     @staticmethod
-    async def log_whale_activity(wallet, condition_id, token_id, title, outcome, side, size, price, timestamp):
+    async def log_whale_activity(wallet, condition_id, token_id_yes, token_id_no, title, outcome, side, size, price, timestamp):
         """Inserts a whale trade into the database. Aggregates partial fills within a short window."""
         
         async with aiosqlite.connect(DB_NAME) as db:
-            # 1. Ensure Market Exists (and update token_id if provided)
-            # We use INSERT OR IGNORE, but if token_id was missing before, we might want to update it.
-            # For simplicity, we'll try to update it if it exists, or insert if not.
+            # 1. Ensure Market Exists (and update token_ids if provided)
             await db.execute("""
-                INSERT OR IGNORE INTO markets (condition_id, token_id, title, last_price, last_updated)
-                VALUES (?, ?, ?, ?, ?)
-            """, (condition_id, token_id, title, price, timestamp))
+                INSERT OR IGNORE INTO markets (condition_id, token_id_yes, token_id_no, title, last_price, last_updated)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (condition_id, token_id_yes, token_id_no, title, price, timestamp))
             
-            # If entry exists but token_id is NULL, update it
-            if token_id:
-                await db.execute("UPDATE markets SET token_id = ? WHERE condition_id = ? AND token_id IS NULL", (token_id, condition_id))
+            # If entry exists but token_ids are updated
+            if token_id_yes:
+                await db.execute("UPDATE markets SET token_id_yes = ? WHERE condition_id = ?", (token_id_yes, condition_id))
+            if token_id_no:
+                await db.execute("UPDATE markets SET token_id_no = ? WHERE condition_id = ?", (token_id_no, condition_id))
 
             # 2. Ensure Wallet Exists
             await db.execute("""
