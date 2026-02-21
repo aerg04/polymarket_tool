@@ -79,7 +79,7 @@ async def main():
     # 1. Validate Config
     if not Config.validate():
         sys.exit(1)
-    Database.init_db()  # Initialize the database (creates tables if not exist)
+    await Database.init_db()  # Initialize the database (creates tables if not exist)
     # 2. Initialize Modules
     tracker = Tracker(process_transaction_callback=process_whale_activity)
     
