@@ -46,10 +46,13 @@ async def process_whale_activity(act):
     # --- SAVE TO DB ---
     # We must ensure we have a condition_id. The API should provide it. 
     # If using tracker.py, it is extracted as 'conditionId'.
+    token_id = act.get('asset_id') or act.get('token_id')
+    
     if condition_id:
         await Database.log_whale_activity(
             wallet=wallet, 
             condition_id=condition_id,
+            token_id=token_id,
             title=title, 
             outcome=outcome, 
             side=side, 

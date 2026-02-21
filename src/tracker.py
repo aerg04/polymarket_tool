@@ -43,12 +43,15 @@ class Tracker:
         # Procesamos desde el más antiguo al más nuevo
         new_activities = []
         for act in reversed(activities):
-            # Usamos conditionId y side para evitar spam de ordenes large que se llenan parcialmente
-            # La API puede devolver multiples eventos "TRADE" para una sola orden limite
-            # Agrupamos por Market (conditionId) + Lado (BUY/SELL)
-            condition_id = act.get('conditionId')
-            side = act.get('side')
-            act_id = f"{condition_id}_{side}"
+            # Usamos el ID único de la actividad para evitar duplicados exactos
+            act_id = act.get('id')
+            
+            # Si no hay ID, intentamos construir uno único (timestamp + type + conditionId)
+            if not act_id:
+                condition_id = act.get('conditionId')
+                side = act.get('side')
+                timestamp = act.get('timestamp')
+                act_id = f"{condition_id}_{side}_{timestamp}"
             
             if act_id in self.seen_activity_ids:
                 continue
