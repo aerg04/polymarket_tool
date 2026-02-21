@@ -71,7 +71,7 @@ class Trader:
         else:
             return self.default_bet_size
 
-    async def execute_copy_trade(self, token_id, original_amount: float, side: str):
+    async def execute_copy_trade(self, token_id, target_name, original_amount: float, side: str):
         """
         Executes a trade on Polymarket matching the whale's activity.
         
@@ -83,7 +83,7 @@ class Trader:
         bet_amount = await self.calculate_bet_size()
 
         console.print(f"[bold yellow]Executing COPY TRADE...[/bold yellow]")
-        console.print(f"Target Market/Token: {token_id}")
+        console.print(f"Target Market/Token: {target_name}")
         console.print(f"My Bet Size: {bet_amount:.2f} USDC (Whale size: {original_amount})")
 
         if not self.client:
@@ -100,18 +100,22 @@ class Trader:
             # However, for copy trading simpler heuristic: we mimic the whale's conviction translated to our size.
             
             # Note: py-clob-client create_market_order uses 'amount'.
+            console.print(f"[bold green]✔ voy bien![/bold green]")
             market_order = MarketOrderArgs(
                 token_id=token_id,
                 amount=bet_amount, 
                 side=order_side,
                 order_type=OrderType.FOK 
             )
+            console.print(f"[bold green]✔ voy bien![/bold green]")
 
             # create_market_order returns a SignedOrder
             signed_order = self.client.create_market_order(market_order)
+            console.print(f"[bold green]✔ voy bien![/bold green]")
             
             # Execute the order
             resp = self.client.post_order(signed_order, OrderType.FOK)
+            console.print(f"[bold green]✔ voy bien![/bold green]")
             
             console.print(f"[bold green]✔ Trade Executed Successfully![/bold green]")
             console.print(f"Order ID: {resp.get('orderID', 'Unknown')}")
