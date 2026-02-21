@@ -80,11 +80,8 @@ class Trader:
             original_amount: The amount the whale bet.
             side: 'BUY' or 'SELL'.
         """
-        bet_amount = await self.calculate_bet_size()
-
-        console.print(f"[bold yellow]Executing COPY TRADE...[/bold yellow]")
+        console.print(f"[bold yellow]Executing COPY TRADE ({side})...[/bold yellow]")
         console.print(f"Target Market/Token: {target_name}")
-        console.print(f"My Bet Size: {bet_amount:.2f} USDC (Whale size: {original_amount})")
 
         if not self.client:
             console.print("[bold red]✘ Client not initialized. Cannot trade.[/bold red]")
@@ -93,29 +90,62 @@ class Trader:
         try:
             order_side = BUY if side.upper() == 'BUY' else SELL
             
-            # Using Fill-Or-Kill (FOK) Market Order
-            # For BUY, amount usually refers to the amount of collateral (USDC) you want to spend. 
-            # For SELL, it might refer to the amount of shares you want to sell.
-            # Assuming 'amount' here is in USDC value if BUY, and Shares if SELL.
-            # However, for copy trading simpler heuristic: we mimic the whale's conviction translated to our size.
+            # DEFAULT LOGIC:
+            # - BUY: Amount = USDC Size (calculated from config)
+            # - SELL: Amount = Number of Shares (We try to sell ALL our holdings of this token)
             
+            amount = 0.0
+            
+            if order_side == BUY:
+                # Calculate Bet Size in USDC
+                amount = await self.calculate_bet_size()
+                console.print(f"My Bet Size: {amount:.2f} USDC (Whale size: {original_amount})")
+                
+            else: # SELL
+                # We need to find how many shares we own of 'token_id'
+                # Polymarket API /positions endpoint or CLOB balance check
+                # For simplicity/speed, we use the CLOB client to get balance of this specific asset?
+                # The 'get_balance_allowance' is for Collateral (USDC). 
+                # To get token balance, we might need a different call or rely on keeping track.
+                # Let's try to fetch simple position info.
+                
+                # Fetch all positions to find this token
+                positions = self.get_bot_positions()
+                my_shares = 0.0
+                for p in positions:
+                    if p.get('asset') == token_id:
+                        my_shares = float(p.get('size', 0))
+                        break
+                
+                if my_shares <= 0:
+                    console.print(f"[yellow]⚠ No shares found for {token_id}. Skipping SELL.[/yellow]")
+                    return False
+                
+                # Round down to avoid precision errors, typically 2-4 decimals is safe for shares
+                # but let's try to be as precise as feasible, maybe remove dust logic
+                amount = float(f"{my_shares:.2f}") 
+                if amount <= 0:
+                     console.print(f"[yellow]⚠ Share amount too small to sell ({my_shares}). Skipping.[/yellow]")
+                     return False
+                     
+                console.print(f"Selling Shares: {amount:.2f} (Whale size: {original_amount})")
+
             # Note: py-clob-client create_market_order uses 'amount'.
-            console.print(f"[bold green]✔ voy bien![/bold green]")
+            # BUY: amount is in USDC (Collateral)
+            # SELL: amount is in Token Units (Shares)
+            
             market_order = MarketOrderArgs(
                 token_id=token_id,
-                amount=bet_amount, 
+                amount=amount, 
                 side=order_side,
                 order_type=OrderType.FOK 
             )
-            console.print(f"[bold green]✔ voy bien![/bold green]")
 
             # create_market_order returns a SignedOrder
             signed_order = self.client.create_market_order(market_order)
-            console.print(f"[bold green]✔ voy bien![/bold green]")
             
             # Execute the order
             resp = self.client.post_order(signed_order, OrderType.FOK)
-            console.print(f"[bold green]✔ voy bien![/bold green]")
             
             console.print(f"[bold green]✔ Trade Executed Successfully![/bold green]")
             console.print(f"Order ID: {resp.get('orderID', 'Unknown')}")
