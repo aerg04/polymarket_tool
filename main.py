@@ -21,7 +21,7 @@ async def process_whale_activity(act):
     trader = Trader()
     
     # Extract data from API activity object
-    act_id = act.get('id', 'unknown_id')
+    act_id = act.get('asset', 'unknown_id')
     wallet = act.get('wallet_address', 'unknown_wallet')
     
     # Extract the REAL conditionId
@@ -71,7 +71,7 @@ async def process_whale_activity(act):
     if side == "BUY":
         # We pass 'outcome' or 'asset' as token_id for now since API might not give raw ID
         token_identifier = f"{title} [{outcome}]" 
-        await trader.execute_copy_trade(token_id=token_identifier, original_amount=size, side="BUY")
+        await trader.execute_copy_trade(token_id=act_id,target_name = token_identifier, original_amount=size, side="BUY")
 
 async def main():
     console.print(Panel("Polymarket Copy Trading Bot", subtitle="v1.0.0", style="bold green"))
@@ -79,7 +79,7 @@ async def main():
     # 1. Validate Config
     if not Config.validate():
         sys.exit(1)
-    Database.init_db()  # Initialize the database (creates tables if not exist)
+    await Database.init_db()  # Initialize the database (creates tables if not exist)
     # 2. Initialize Modules
     tracker = Tracker(process_transaction_callback=process_whale_activity)
     
