@@ -50,6 +50,8 @@ class Config:
         BET_PERCENTAGE = float(os.getenv("BET_PERCENTAGE", "0.05"))
     except ValueError:
         BET_PERCENTAGE = 0.05
+
+    SIMULATION_MODE = os.getenv("SIMULATION_MODE", "false").lower() == "true"
         
     SLIPPAGE_TOLERANCE = float(os.getenv("SLIPPAGE_TOLERANCE", "0.01"))
     
