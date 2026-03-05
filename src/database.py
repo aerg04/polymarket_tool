@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS bot_trades (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     condition_id TEXT,
     outcome TEXT,
+    side TEXT,
     entry_price REAL,
     size_usd REAL,
     status TEXT DEFAULT 'OPEN', -- OPEN, CLOSED
@@ -80,6 +81,13 @@ class Database:
                 try:
                     await db.execute("ALTER TABLE markets ADD COLUMN token_id_no TEXT")
                     console.print("[yellow]Migrated DB: Added token_id_no column[/yellow]")
+                except Exception:
+                    pass # Column likely exists
+                    
+                # Migration: Add side column to bot_trades if it doesn't exist
+                try:
+                    await db.execute("ALTER TABLE bot_trades ADD COLUMN side TEXT")
+                    console.print("[yellow]Migrated DB: Added side column to bot_trades[/yellow]")
                 except Exception:
                     pass # Column likely exists
 
@@ -153,3 +161,69 @@ class Database:
                 console.print(f"[dim]DB: Logged new trade for {wallet[:6]}[/dim]")
             
             await db.commit()
+
+    @staticmethod
+    async def log_bot_trade(condition_id, outcome, side, entry_price, size_usd, status='OPEN'):
+        """Logs a trade made by the bot (Real or Simulated)."""
+        async with aiosqlite.connect(DB_NAME) as db:
+            timestamp = int(datetime.utcnow().timestamp())
+            await db.execute("""
+                INSERT INTO bot_trades (condition_id, outcome, side, entry_price, size_usd, status, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (condition_id, outcome, side, entry_price, size_usd, status, timestamp))
+            await db.commit()
+            console.print(f"[dim]DB: Logged BOT trade {status} for {outcome} ({side})[/dim]")
+
+    @staticmethod
+    async def update_bot_pnl(trade_id, pnl_usd):
+        """
+        Updates the realized PnL for a closed trade or logs current PnL.
+        """
+        async with aiosqlite.connect(DB_NAME) as db:
+             # We might want to add an 'unrealized_pnl' column or just update 'realized_pnl' if closed.
+             # For now, let's update realized_pnl only if we decide to partial close or mark it.
+             # Since schema only has realized_pnl, we might leave it alone until close.
+             # Alternatively, we can use this to update status if we implement stop loss/take profit here.
+             pass
+
+    @staticmethod
+    async def find_open_trade(condition_id, outcome):
+        """Finds the most recent OPEN trade for a given condition and outcome."""
+        async with aiosqlite.connect(DB_NAME) as db:
+            # We use LOWER() to ensure case-insensitive matching for condition_id and outcome
+            # This handles potential inconsistencies from API or previous logs
+            cursor = await db.execute("""
+                SELECT id, entry_price, size_usd, status
+                FROM bot_trades
+                WHERE LOWER(condition_id) = LOWER(?) 
+                  AND LOWER(outcome) = LOWER(?) 
+                  AND status IN ('OPEN', 'SIMULATED_OPEN')
+                ORDER BY timestamp DESC
+                LIMIT 1
+            """, (condition_id, outcome))
+            return await cursor.fetchone()
+
+    @staticmethod
+    async def close_bot_trade(trade_id, exit_price):
+        """Closes a bot trade and calculates final PnL."""
+        async with aiosqlite.connect(DB_NAME) as db:
+            cursor = await db.execute("SELECT entry_price, size_usd, side FROM bot_trades WHERE id = ?", (trade_id,))
+            row = await cursor.fetchone()
+            if row:
+                entry_price, size_usd, side = row
+                
+                # Calculate PnL
+                # BUY: (Exit - Entry) * Shares
+                # SELL: (Entry - Exit) * Shares (Shorting logic, but here we only BUY tokens usually or Sell to close)
+                # Assuming we only track BUYs as 'OPEN' positions we are holding.
+                
+                shares = size_usd / entry_price if entry_price > 0 else 0
+                pnl = (exit_price - entry_price) * shares
+                
+                await db.execute("""
+                    UPDATE bot_trades 
+                    SET status = 'CLOSED', realized_pnl = ? 
+                    WHERE id = ?
+                """, (pnl, trade_id))
+                await db.commit()
+                console.print(f"[green]DB: Closed trade {trade_id} | PnL: ${pnl:.2f}[/green]")
