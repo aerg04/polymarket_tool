@@ -1,9 +1,6 @@
 import asyncio
 import aiohttp
-import time
-from datetime import datetime
 from src.config import Config, console
-from rich.panel import Panel
 
 class Tracker:
     def __init__(self, process_transaction_callback):
