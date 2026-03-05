@@ -51,3 +51,26 @@ class MarketAPI:
             console.print(f"[red]Error fetching market details: {e}[/red]")
             
         return None, None
+
+    @staticmethod
+    async def get_market_price(token_id):
+        """
+        Fetches the current midpoint price for a token from CLOB.
+        """
+        if not token_id:
+            return 0.0
+        
+        # Using the simplified price endpoint or midpoint
+        url = f"{Config.POLYMARKET_CLOB_API_URL}/price"
+        params = {"token_id": token_id, "side": "buy"} # check buy side price or mid
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return float(data.get('price', 0))
+        except Exception as e:
+            # console.print(f"[dim]Price fetch failed for {token_id}: {e}[/dim]")
+            pass
+        return 0.0
