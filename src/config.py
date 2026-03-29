@@ -55,6 +55,16 @@ class Config:
         
     SLIPPAGE_TOLERANCE = float(os.getenv("SLIPPAGE_TOLERANCE", "0.01"))
     
+    # Modes
+    ENABLE_WHALE_TRACKER = os.getenv("ENABLE_WHALE_TRACKER", "True").lower() == "true"
+    ENABLE_WS_GATHERING = os.getenv("ENABLE_WS_GATHERING", "False").lower() == "true"
+    ENABLE_BTC_SNIPER = os.getenv("ENABLE_BTC_SNIPER", "False").lower() == "true"
+    
+    try:
+        SNIPER_TRIGGER_SECONDS = float(os.getenv("SNIPER_TRIGGER_SECONDS", "35.0"))
+    except ValueError:
+        SNIPER_TRIGGER_SECONDS = 35.0
+    
     # Telegram
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
     TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")

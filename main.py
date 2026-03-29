@@ -1,11 +1,17 @@
 import asyncio
 import sys
 import time
+import logging
 from rich.console import Console
 from rich.panel import Panel
 
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
 from src.config import Config
 from src.tracker import Tracker
+from src.ws_client import WSClient
+from src.sniper import SniperStrategy
 from src.notifier import Notifier
 from src.trader import Trader
 from src.database import Database
@@ -169,24 +175,52 @@ async def main():
     if not Config.validate():
         sys.exit(1)
     await Database.init_db()  # Initialize the database (creates tables if not exist)
-    # 2. Initialize Modules
-    tracker = Tracker(process_transaction_callback=process_whale_activity)
     
-    # Run a redemption check on startup
-    trader = Trader()
-    redeemer = Redeemer(trader)
-    
-    console.print("[yellow]Checking for redeemable positions...[/yellow]")
-    # We create a task for this so it runs async but doesn't block main loop if slow
-    asyncio.create_task(redeemer.check_and_redeem())
-    
-    # Start Performance Tracker
-    tracker_pnl = PerformanceTracker()
-    asyncio.create_task(tracker_pnl.run())
+    tasks = []
+
+    if Config.ENABLE_WHALE_TRACKER:
+        console.print("[green]Whale Tracker Enabled[/green]")
+        # 2. Initialize Modules
+        tracker = Tracker(process_transaction_callback=process_whale_activity)
+        
+        # Run a redemption check on startup
+        trader = Trader()
+        redeemer = Redeemer(trader)
+        
+        console.print("[yellow]Checking for redeemable positions...[/yellow]")
+        # We create a task for this so it runs async but doesn't block main loop if slow
+        asyncio.create_task(redeemer.check_and_redeem())
+        
+        # Start Performance Tracker
+        tracker_pnl = PerformanceTracker()
+        asyncio.create_task(tracker_pnl.run())
+
+        tasks.append(asyncio.create_task(tracker.start_monitoring()))
+
+    if Config.ENABLE_WS_GATHERING or Config.ENABLE_BTC_SNIPER:
+        console.print("[green]WebSocket Data Gathering Enabled[/green]")
+        # Shared state for real-time prices
+        live_markets_state = {} 
+        
+        ws_client = WSClient(live_markets_state)
+        # Connect WS & fetch initial tokens
+        tasks.append(asyncio.create_task(ws_client.connect()))
+        tasks.append(asyncio.create_task(ws_client.update_subscriptions_loop()))
+
+        if Config.ENABLE_BTC_SNIPER:
+            console.print("[green]BTC Sniper bot Enabled[/green]")
+            sniper = SniperStrategy(live_markets_state)
+            # Start Sniper trading & PnL tracking
+            tasks.append(asyncio.create_task(sniper.sniper_execution_loop()))
+            tasks.append(asyncio.create_task(sniper.pnl_resolution_loop()))
+
+    if not tasks:
+        console.print("[bold red]No strategies enabled. Exiting.[/bold red]")
+        return
 
     # 3. Start Loop
     try:
-        await tracker.start_monitoring()
+        await asyncio.gather(*tasks)
     except KeyboardInterrupt:
         console.print("\n[bold yellow]Shutting down...[/bold yellow]")
     except Exception as e:
