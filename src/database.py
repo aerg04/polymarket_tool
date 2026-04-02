@@ -96,7 +96,7 @@ class Database:
     async def init_db():
         """Initializes the database explicitly with WAL mode."""
         try:
-            async with aiosqlite.connect(DB_NAME) as db:
+            async with aiosqlite.connect(DB_NAME, timeout=15.0) as db:
                 # --- ENABLE WAL MODE ---
                 await db.execute("PRAGMA journal_mode=WAL;")
                 # -----------------------
@@ -111,7 +111,7 @@ class Database:
     async def log_whale_activity(wallet, condition_id, token_id_yes, token_id_no, title, outcome, side, size, price, timestamp):
         """Inserts a whale trade into the unified trades table. Aggregates partial fills within a short window."""
         
-        async with aiosqlite.connect(DB_NAME) as db:
+        async with aiosqlite.connect(DB_NAME, timeout=15.0) as db:
             # 1. Ensure Market Exists
             await db.execute("""
                 INSERT OR IGNORE INTO markets (market_id, title, last_price, last_updated)
@@ -184,7 +184,7 @@ class Database:
     @staticmethod
     async def log_bot_trade(condition_id, outcome, side, entry_price, size_usd, status='OPEN'):
         """Logs a trade made by the bot (Real or Simulated) using the unified schema."""
-        async with aiosqlite.connect(DB_NAME) as db:
+        async with aiosqlite.connect(DB_NAME, timeout=15.0) as db:
             timestamp = int(datetime.utcnow().timestamp())
             
             # Attempt to find the asset_id based on outcome
@@ -206,7 +206,7 @@ class Database:
     @staticmethod
     async def find_open_trade(condition_id, outcome):
         """Finds the most recent OPEN BOT trade for a given market/condition and outcome."""
-        async with aiosqlite.connect(DB_NAME) as db:
+        async with aiosqlite.connect(DB_NAME, timeout=15.0) as db:
             # Join with market_assets if we need to match precisely by outcome
             cursor = await db.execute("""
                 SELECT t.trade_id, t.price, t.size, t.status
@@ -224,7 +224,7 @@ class Database:
     @staticmethod
     async def close_bot_trade(trade_id, exit_price):
         """Closes a BOT trade and calculates final PnL."""
-        async with aiosqlite.connect(DB_NAME) as db:
+        async with aiosqlite.connect(DB_NAME, timeout=15.0) as db:
             cursor = await db.execute("SELECT price, size, side FROM trades WHERE trade_id = ?", (trade_id,))
             row = await cursor.fetchone()
             if row:
@@ -243,7 +243,7 @@ class Database:
 
     @staticmethod
     async def log_ws_market(asset_id, parent_market_id, question, outcome, created_at):
-        async with aiosqlite.connect(DB_NAME) as db:
+        async with aiosqlite.connect(DB_NAME, timeout=15.0) as db:
             await db.execute(
                 "INSERT OR IGNORE INTO markets (market_id, title, created_at) VALUES (?, ?, ?)",
                 (parent_market_id, question, created_at)
@@ -256,7 +256,7 @@ class Database:
 
     @staticmethod
     async def log_best_bid_ask(timestamp, market_id, best_bid, best_ask, spread):
-        async with aiosqlite.connect(DB_NAME) as db:
+        async with aiosqlite.connect(DB_NAME, timeout=15.0) as db:
             await db.execute(
                 "INSERT OR REPLACE INTO best_bid_ask (market_id, timestamp, best_bid, best_ask, spread) VALUES (?, ?, ?, ?, ?)",
                 (market_id, timestamp, best_bid, best_ask, spread)
@@ -265,7 +265,7 @@ class Database:
 
     @staticmethod
     async def log_trade(timestamp, market_id, price, side, size):
-        async with aiosqlite.connect(DB_NAME) as db:
+        async with aiosqlite.connect(DB_NAME, timeout=15.0) as db:
             # For WS public trades, market_id typically represents the token/asset.
             # We attempt to find the parent market_id.
             cursor = await db.execute("SELECT market_id FROM market_assets WHERE asset_id = ?", (market_id,))
@@ -280,7 +280,7 @@ class Database:
 
     @staticmethod
     async def log_price_change(timestamp, market_id, price, size, side):
-        async with aiosqlite.connect(DB_NAME) as db:
+        async with aiosqlite.connect(DB_NAME, timeout=15.0) as db:
             # Often asset_id is passed here instead of market_id
             await db.execute(
                 "INSERT OR REPLACE INTO price_changes (market_id, timestamp, price, size, side) VALUES (?, ?, ?, ?, ?)",
@@ -290,7 +290,7 @@ class Database:
 
     @staticmethod
     async def log_tick_size_change(timestamp, market_id, old_tick_size, new_tick_size):
-        async with aiosqlite.connect(DB_NAME) as db:
+        async with aiosqlite.connect(DB_NAME, timeout=15.0) as db:
             await db.execute(
                 "INSERT OR REPLACE INTO tick_size_changes (market_id, timestamp, old_tick_size, new_tick_size) VALUES (?, ?, ?, ?)",
                 (market_id, timestamp, old_tick_size, new_tick_size)
@@ -299,7 +299,7 @@ class Database:
 
     @staticmethod
     async def log_paper_trade(timestamp, asset_id, buy_price, seconds_left):
-        async with aiosqlite.connect(DB_NAME) as db:
+        async with aiosqlite.connect(DB_NAME, timeout=15.0) as db:
             cursor = await db.execute("SELECT market_id FROM market_assets WHERE asset_id = ?", (asset_id,))
             row = await cursor.fetchone()
             parent_id = row[0] if row else asset_id
@@ -312,13 +312,13 @@ class Database:
 
     @staticmethod
     async def get_unresolved_paper_trades():
-        async with aiosqlite.connect(DB_NAME) as db:
+        async with aiosqlite.connect(DB_NAME, timeout=15.0) as db:
             cursor = await db.execute("SELECT trade_id, asset_id, price FROM trades WHERE trade_source = 'PAPER' AND realized_pnl IS NULL")
             return await cursor.fetchall()
             
     @staticmethod
     async def get_parent_market_id(asset_id):
-        async with aiosqlite.connect(DB_NAME) as db:
+        async with aiosqlite.connect(DB_NAME, timeout=15.0) as db:
             cursor = await db.execute("SELECT market_id FROM market_assets WHERE asset_id = ?", (asset_id,))
             row = await cursor.fetchone()
             if row:
@@ -327,7 +327,7 @@ class Database:
 
     @staticmethod
     async def update_paper_trade_pnl(trade_id, pnl, resolved_price):
-        async with aiosqlite.connect(DB_NAME) as db:
+        async with aiosqlite.connect(DB_NAME, timeout=15.0) as db:
             await db.execute(
                 "UPDATE trades SET realized_pnl = ?, resolved_price = ? WHERE trade_id = ?",
                 (pnl, resolved_price, trade_id)
