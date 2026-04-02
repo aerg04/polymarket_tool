@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.db        
+*.db      
+*.csv
+late_stage_sniper_results.txt
 .env
 .vscode
