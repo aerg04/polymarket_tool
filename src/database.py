@@ -99,6 +99,8 @@ class Database:
             async with aiosqlite.connect(DB_NAME, timeout=15.0) as db:
                 # --- ENABLE WAL MODE ---
                 await db.execute("PRAGMA journal_mode=WAL;")
+                await db.execute("PRAGMA synchronous=NORMAL;")
+                await db.execute("PRAGMA temp_store=MEMORY;")
                 # -----------------------
                 
                 await db.executescript(INIT_SCRIPT)
