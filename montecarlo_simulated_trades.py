@@ -9,15 +9,18 @@ def run_montecarlo(df, num_simulations=10000, trades_per_sim=1000, initial_capit
     """
     results = []
 
-    # Group by the specified parameters
-    grouped = df.groupby(['sec_before_close', 'price_threshold'])
+    # Clean data (drop unresolved trades or missing prices)
+    df = df.dropna(subset=['realized_pnl', 'price'])
+
+    # Treat all trades as a single group
+    grouped = [("All_Trades", df)]
 
     for name, group in grouped:
-        sec_before_close, price_threshold = name
+        group_name = name
         
-        # Extract profits directly - assuming the profit column is per unit (e.g., per 1 share)
-        profits_per_share = group['profit'].values
-        buy_prices = group['buy_price'].values
+        # Extract profits and buy prices based on the new CSV structure
+        profits_per_share = group['realized_pnl'].values
+        buy_prices = group['price'].values
         
         # Calculate ROI per trade (profit per dollar invested)
         # Avoid division by zero
@@ -156,8 +159,7 @@ def run_montecarlo(df, num_simulations=10000, trades_per_sim=1000, initial_capit
         expectancy = ((win_rate/100) * avg_win) - ((1 - (win_rate/100)) * avg_loss)
 
         results.append({
-            'sec_before_close': sec_before_close,
-            'price_threshold': price_threshold,
+            'group_name': group_name,
             'num_historical_trades': num_trades_in_group,
             'win_rate': round(win_rate, 2),
             'mean_final_capital': round(mean_final, 2),
@@ -185,7 +187,7 @@ def run_montecarlo(df, num_simulations=10000, trades_per_sim=1000, initial_capit
 
 def main():
     parser = argparse.ArgumentParser(description="Run Monte Carlo simulation on simulated trades.")
-    parser.add_argument('--file', type=str, default='simulated_trades_dataset.csv', help='Path to the CSV dataset')
+    parser.add_argument('--file', type=str, default='paper_trades.csv', help='Path to the CSV dataset')
     parser.add_argument('--sims', type=int, default=10000, help='Number of simulations per group')
     parser.add_argument('--trades', type=int, default=100, help='Number of trades per simulation')
     parser.add_argument('--position-pct', type=float, default=0.10, help='Position size as a percentage of capital (e.g. 0.10 for 10%%)')
@@ -202,13 +204,16 @@ def main():
     print(f"Position size set to {args.position_pct * 100:.1f}% per trade.")
     summary_df = run_montecarlo(df, num_simulations=args.sims, trades_per_sim=args.trades, position_pct=args.position_pct)
     
+    if summary_df.empty:
+        print("No trades found to simulate. Make sure you have resolved paper trades.")
+        return
+
     print("\n--- Monte Carlo Results ---")
     print(summary_df.to_string(index=False))
     
     # Dictionary to rename columns with units
     units_mapping = {
-        'sec_before_close': 'sec_before_close_(s)',
-        'price_threshold': 'price_threshold_(ratio)',
+        'group_name': 'group_name',
         'num_historical_trades': 'num_historical_trades_(count)',
         'win_rate': 'win_rate_(%)',
         'mean_final_capital': 'mean_final_capital_($)',
