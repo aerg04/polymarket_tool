@@ -77,7 +77,7 @@ class SniperStrategy:
                                 if response.status == 200:
                                     data = await response.json()
                                     if data.get("closed") and data.get("endDate"):
-                                        token_prices = data.get("prices", "[]")
+                                        token_prices = data.get("outcomePrices", "[]")
                                         if isinstance(token_prices, str):
                                             token_prices = json.loads(token_prices)
                                         
