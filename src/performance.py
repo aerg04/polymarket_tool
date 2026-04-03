@@ -20,7 +20,7 @@ class PerformanceTracker:
 
     async def update_pnl(self):
         # Fetch inclusive open trades (Real and Simulated)
-        async with aiosqlite.connect(DB_NAME) as db:
+        async with aiosqlite.connect(DB_NAME, timeout=15.0) as db:
             db.row_factory = aiosqlite.Row
             # Join with markets table to get the title
             cursor = await db.execute("""
