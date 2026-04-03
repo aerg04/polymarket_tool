@@ -126,8 +126,11 @@ class WSClient:
             except ValueError:
                 spread = None
 
-            if market_id in self.live_markets and best_ask is not None:
-                self.live_markets[market_id]["best_ask"] = best_ask
+            if market_id in self.live_markets:
+                if best_ask is not None:
+                    self.live_markets[market_id]["best_ask"] = best_ask
+                if best_bid is not None:
+                    self.live_markets[market_id]["best_bid"] = best_bid
 
             await Database.log_best_bid_ask(ts, market_id, best_bid, best_ask, spread)
 
@@ -187,6 +190,7 @@ class WSClient:
                                                 self.live_markets[token_id] = {
                                                     "expiration_timestamp": epoch + 300,
                                                     "best_ask": None,
+                                                    "best_bid": None,
                                                     "traded": False,
                                                     "parent_market_id": parent_market_id,
                                                 }

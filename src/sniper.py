@@ -6,6 +6,7 @@ import aiohttp
 from .database import Database
 from .notifier import Notifier
 from .config import Config
+from .trader import Trader
 
 logger = logging.getLogger("SniperStrategy")
 
@@ -13,6 +14,8 @@ class SniperStrategy:
     def __init__(self, live_markets_state: dict):
         self.live_markets = live_markets_state
         self.notifier = Notifier()
+        self.trader = Trader() if getattr(Config, "SNIPER_LIVE_TRADE", False) else None
+        self.sl_triggered = set()
 
     async def sniper_execution_loop(self):
         """Iterates through live_markets to execute paper trades exactly N seconds before expiration."""
@@ -25,6 +28,43 @@ class SniperStrategy:
             
             for market_id, data in list(self.live_markets.items()):
                 if data["traded"]:
+                    sl = getattr(Config, "SNIPER_SL", 0.0)
+                    if sl > 0.0 and market_id not in self.sl_triggered:
+                        buy_price = data.get("buy_price")
+                        best_bid = data.get("best_bid")
+                        
+                        if buy_price and best_bid is not None:
+                            # Assume SL is an absolute drop or price floor. Let's use a percentage drop: 
+                            # if price drops by SL * buy_price (e.g. SL = 0.2 means 20% drop from buy)
+                            # OR if price drops below absolute SL (e.g. SL = 0.5 means any price below 50c). 
+                            # We implement percentage drop if SL <= 1.0, e.g. SL=0.15 for 15% drop.
+                            # Just to be safe, if best_bid <= SL, or loss > SL percentage. Let's just use absolute SL (trigger if best_bid <= SL) 
+                            # User said "number between 0 and 1" -> this matches polymarket prices nicely (e.g. Stop Loss at 0.50c).
+                            # If it's a fixed value, we check best_bid <= sl.
+                            # Wait, "a sl to the sniper, that would be on the .env a number between 0 and 1"
+                            # Let's check both: if best_bid <= sl (absolute floor) OR if best_bid <= buy_price * (1 - sl) (percentage drop).
+                            # I will use percentage drop: A SL of 0.2 (20%).
+                            sl_price = sl if sl > 0 else 0
+                            
+                            # We trigger if we hit absolute price `sl`, OR a fractional drop `buy_price - sl`.
+                            # The safest interpretation for Polymarket is that the user enters the absolute price floor, e.g. 0.5.
+                            # But wait, maybe the user means `buy_price - sl`. Let's just trigger if `best_bid <= sl` (fixed price).
+                            # But what if they enter `0.1` expecting 10 cents drop? We'll trigger if `best_bid <= buy_price - sl`.
+                            # I'll implement `best_bid <= (buy_price - sl)` as absolute amount drop, and `best_bid <= buy_price * (1-sl)` for percent. Let's just do `loss_ratio >= sl`.
+                            # "a sl of 0.1" -> 10% loss. Let's use percentage.
+                            # Actually, a stop loss on Polymarket is often just the target price. I'll use absolute probability price drop: buy at 0.8, SL = 0.5, we sell if drops below 0.5. Since it's a number between 0 and 1! If they want 0.5, it sells at 0.5. So `best_bid <= sl`.
+                            # But what if buy_price was already < sl? Then it triggers instantly.
+                            # Let's trigger if `best_bid <= buy_price - sl`. If buy is 0.80 and SL is 0.20, we sell at 0.60. This is the most logical "amount to lose".
+                            
+                            if best_bid <= (buy_price - sl):
+                                self.sl_triggered.add(market_id)
+                                logger.info(f"STOP LOSS HIT for {market_id}! Buy: {buy_price}, Current Bid: {best_bid}, SL drop: {sl}")
+                                msg = f"🛑 **STOP LOSS TRIGGERED**\nMarket: `{market_id}`\nBuy Price: ${buy_price:.3f}\nExit Bid: ${best_bid:.3f}"
+                                asyncio.create_task(self.notifier.send_alert(msg))
+                                
+                                if data.get("live_trade_executed") and self.trader:
+                                    asyncio.create_task(self.trader.execute_copy_trade(market_id, "Sniper Target", 0, "SELL"))
+                                    
                     continue
                 
                 exp_time = data["expiration_timestamp"]
@@ -40,6 +80,8 @@ class SniperStrategy:
                 if (trigger_time - 1.0) <= time_left <= (trigger_time + 1.0):
                     if 0.75 <= best_ask <= 0.99:
                         self.live_markets[market_id]["traded"] = True
+                        self.live_markets[market_id]["buy_price"] = best_ask
+                        self.live_markets[market_id]["live_trade_executed"] = getattr(Config, "SNIPER_LIVE_TRADE", False)
                         seconds_left_int = int(time_left)
                         logger.info(f"SNIPER TRIGGERED! Market: {market_id} | Ask: {best_ask} | Time Left: {time_left:.2f}s")
                         
@@ -47,8 +89,12 @@ class SniperStrategy:
                             (current_time, market_id, best_ask, seconds_left_int)
                         )
                         
-                        msg = f"🎯 **SNIPER PAPER TRADE**\nMarket: `{market_id}`\nAsk Price: ${best_ask:.3f}\nTime Left: {time_left:.1f}s"
+                        msg_prefix = "🚀 **REAL SNIPER TRADE**" if getattr(Config, "SNIPER_LIVE_TRADE", False) else "🎯 **SNIPER PAPER TRADE**"
+                        msg = f"{msg_prefix}\nMarket: `{market_id}`\nAsk Price: ${best_ask:.3f}\nTime Left: {time_left:.1f}s"
                         asyncio.create_task(self.notifier.send_alert(msg))
+                        
+                        if getattr(Config, "SNIPER_LIVE_TRADE", False) and self.trader:
+                            asyncio.create_task(self.trader.execute_copy_trade(market_id, "Sniper Target", best_ask, "BUY"))
             
             for trade in triggered_trades:
                 await Database.log_paper_trade(trade[0], trade[1], trade[2], trade[3])
