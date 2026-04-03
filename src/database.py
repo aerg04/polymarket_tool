@@ -137,11 +137,15 @@ class Database:
             if batch:
                 try:
                     for query, params in batch:
-                        await cls._conn.execute(query, params)
+                        try:
+                            await cls._conn.execute(query, params)
+                        except Exception as inner_e:
+                            console.print(f"[red]Failed query: {query} | Error: {inner_e}[/red]")
                     await cls._conn.commit()
-                    batch.clear()
                 except Exception as e:
                     console.print(f"[red]Database insertion error: {e}[/red]")
+                finally:
+                    batch.clear()
 
     @classmethod
     async def _execute(cls, query, params=()):
