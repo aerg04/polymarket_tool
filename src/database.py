@@ -3,7 +3,7 @@ import asyncio
 from rich.console import Console
 from datetime import datetime, timezone
 
-DB_NAME = "polymarket_bot.db"
+DB_NAME = "data/polymarket_bot.db"
 console = Console()
 
 INIT_SCRIPT = """
