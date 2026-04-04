@@ -193,6 +193,8 @@ class WSClient:
                                                     "best_bid": None,
                                                     "traded": False,
                                                     "parent_market_id": parent_market_id,
+                                                    "question": question,
+                                                    "outcome": outcome,
                                                 }
                                             await Database.log_ws_market(token_id, parent_market_id, question, outcome, current_time)
                                     except json.JSONDecodeError:
