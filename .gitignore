@@ -8,3 +8,4 @@ __pycache__/
 late_stage_sniper_results.txt
 .env
 .vscode
+/data/
