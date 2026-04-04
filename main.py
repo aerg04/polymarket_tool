@@ -169,7 +169,7 @@ async def process_whale_activity(act):
             console.print(f"[red]Could not determine token_id for trade on {token_identifier}[/red]")
 
 async def main():
-    console.print(Panel("Polymarket Copy Trading Bot", subtitle="v1.0.0", style="bold green"))
+    console.print(Panel("Polymarket Copy Trading Bot", subtitle="v2.0.0", style="bold green"))
     
     # 1. Validate Config
     if not Config.validate():
