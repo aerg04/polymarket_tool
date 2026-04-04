@@ -32,7 +32,23 @@ class SniperStrategy:
                     if sl > 0.0 and market_id not in self.sl_triggered:
                         buy_price = data.get("buy_price")
                         best_bid = data.get("best_bid")
+                        best_ask = data.get("best_ask")
                         
+                        exp_time = data["expiration_timestamp"]
+                        time_left = exp_time - current_time
+                        
+                        # ANTI-LIQUIDITY DRAIN PROTECTIONS
+                        # 1. We consider the market in RESOLUTION if time_left < 15.0 or negative.
+                        # Do not execute stop loss during resolution because orderbook is cleared.
+                        if time_left < 10.0:
+                            continue
+                            
+                        # 2. Prevent Stop Loss on artificially bad quotes if spread goes huge
+                        if best_bid is not None and best_ask is not None:
+                            spread = best_ask - best_bid
+                            if spread > 0.15: # if spread is > 15 cents, orderbook is ghosted
+                                continue
+
                         if buy_price and best_bid is not None:
                             # Assume SL is an absolute drop or price floor. Let's use a percentage drop: 
                             # if price drops by SL * buy_price (e.g. SL = 0.2 means 20% drop from buy)
@@ -58,8 +74,10 @@ class SniperStrategy:
                             
                             if best_bid <= (buy_price - sl):
                                 self.sl_triggered.add(market_id)
-                                logger.info(f"STOP LOSS HIT for {market_id}! Buy: {buy_price}, Current Bid: {best_bid}, SL drop: {sl}")
-                                msg = f"🛑 **STOP LOSS TRIGGERED**\nMarket: `{market_id}`\nBuy Price: ${buy_price:.3f}\nExit Bid: ${best_bid:.3f}"
+                                question = data.get("question", "Unknown Market")
+                                outcome = data.get("outcome", "Unknown Option")
+                                logger.info(f"STOP LOSS HIT for {market_id} ({outcome})! Buy: {buy_price}, Current Bid: {best_bid}, SL drop: {sl}")
+                                msg = f"🛑 **STOP LOSS TRIGGERED**\nMarket: `{question}`\nOutcome: `{outcome}`\nToken: `{market_id}`\nBuy Price: ${buy_price:.3f}\nExit Bid: ${best_bid:.3f}"
                                 asyncio.create_task(self.notifier.send_alert(msg))
                                 
                                 if data.get("live_trade_executed") and self.trader:
@@ -83,14 +101,17 @@ class SniperStrategy:
                         self.live_markets[market_id]["buy_price"] = best_ask
                         self.live_markets[market_id]["live_trade_executed"] = getattr(Config, "SNIPER_LIVE_TRADE", False)
                         seconds_left_int = int(time_left)
-                        logger.info(f"SNIPER TRIGGERED! Market: {market_id} | Ask: {best_ask} | Time Left: {time_left:.2f}s")
+                        question = data.get("question", "Unknown Market")
+                        outcome = data.get("outcome", "Unknown Option")
+                        
+                        logger.info(f"SNIPER TRIGGERED! Market: {question} | Outcome: {outcome} | Ask: {best_ask} | Time Left: {time_left:.2f}s")
                         
                         triggered_trades.append(
                             (current_time, market_id, best_ask, seconds_left_int)
                         )
                         
                         msg_prefix = "🚀 **REAL SNIPER TRADE**" if getattr(Config, "SNIPER_LIVE_TRADE", False) else "🎯 **SNIPER PAPER TRADE**"
-                        msg = f"{msg_prefix}\nMarket: `{market_id}`\nAsk Price: ${best_ask:.3f}\nTime Left: {time_left:.1f}s"
+                        msg = f"{msg_prefix}\nMarket: `{question}`\nOutcome: `{outcome}`\nToken: `{market_id}`\nAsk Price: ${best_ask:.3f}\nTime Left: {time_left:.1f}s"
                         asyncio.create_task(self.notifier.send_alert(msg))
                         
                         if getattr(Config, "SNIPER_LIVE_TRADE", False) and self.trader:
