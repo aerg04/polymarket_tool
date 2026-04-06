@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS trades (
     
     -- Bot/Paper specific columns (Nullable for standard/public trades)
     status TEXT DEFAULT 'CLOSED', -- OPEN, CLOSED (for bots)
-    realized_pnl REAL DEFAULT 0,
+    realized_pnl REAL,
     seconds_left INTEGER,         -- For paper trades
     resolved_price REAL,          -- For paper trades
     
@@ -314,21 +314,22 @@ class Database:
         )
 
     @staticmethod
-    async def log_paper_trade(timestamp, asset_id, buy_price, seconds_left):
+    async def log_paper_trade(timestamp, asset_id, buy_price, seconds_left, is_real=False):
+        trade_source = 'REAL' if is_real else 'PAPER'
         async with aiosqlite.connect(DB_NAME, timeout=15.0) as db:
             cursor = await db.execute("SELECT market_id FROM market_assets WHERE asset_id = ?", (asset_id,))
             row = await cursor.fetchone()
             parent_id = row[0] if row else asset_id
             
         await Database._execute(
-            "INSERT INTO trades (trade_source, market_id, asset_id, price, seconds_left, timestamp) VALUES ('PAPER', ?, ?, ?, ?, ?)",
-            (parent_id, asset_id, buy_price, seconds_left, timestamp)
+            "INSERT INTO trades (trade_source, market_id, asset_id, price, seconds_left, timestamp, realized_pnl) VALUES (?, ?, ?, ?, ?, ?, NULL)",
+            (trade_source, parent_id, asset_id, buy_price, seconds_left, timestamp)
         )
 
     @staticmethod
     async def get_unresolved_paper_trades():
         async with aiosqlite.connect(DB_NAME, timeout=15.0) as db:
-            cursor = await db.execute("SELECT trade_id, asset_id, price FROM trades WHERE trade_source = 'PAPER' AND realized_pnl IS NULL")
+            cursor = await db.execute("SELECT trade_id, asset_id, price, market_id FROM trades WHERE trade_source IN ('PAPER', 'REAL') AND realized_pnl IS NULL")
             return await cursor.fetchall()
             
     @staticmethod
@@ -341,8 +342,38 @@ class Database:
             return None
 
     @staticmethod
+    async def close_paper_trade_by_asset(asset_id, exit_price):
+        async with aiosqlite.connect(DB_NAME, timeout=15.0) as db:
+            cursor = await db.execute("SELECT trade_id, price FROM trades WHERE trade_source IN ('PAPER', 'REAL') AND asset_id = ? AND realized_pnl IS NULL ORDER BY timestamp DESC LIMIT 1", (asset_id,))
+            row = await cursor.fetchone()
+            if row:
+                trade_id, buy_price = row
+                pnl = exit_price - buy_price
+                await db.execute("UPDATE trades SET realized_pnl = ?, resolved_price = ? WHERE trade_id = ?", (pnl, exit_price, trade_id))
+                await db.commit()
+                return trade_id, pnl
+        return None, None
+
+    @staticmethod
     async def update_paper_trade_pnl(trade_id, pnl, resolved_price):
         await Database._execute(
             "UPDATE trades SET realized_pnl = ?, resolved_price = ? WHERE trade_id = ?",
             (pnl, resolved_price, trade_id)
         )
+
+if __name__ == "__main__":
+    async def main():
+        await Database.init_db()
+        console.print("[green]Database initialized and ready for operations.[/green]")
+
+        async with aiosqlite.connect(DB_NAME, timeout=15.0) as db:
+            cursor = await db.execute(
+            "SELECT realized_pnl FROM trades WHERE trade_source = ?",
+            ("PAPER",)
+            )
+            paper_trades = await cursor.fetchall()
+
+            total_pnl = sum((row[0] or 0) for row in paper_trades)
+            print(total_pnl)
+            
+    asyncio.run(main())
