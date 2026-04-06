@@ -58,6 +58,7 @@ class Config:
     # Modes
     ENABLE_WHALE_TRACKER = os.getenv("ENABLE_WHALE_TRACKER", "true").lower() == "true"
     ENABLE_WS_GATHERING = os.getenv("ENABLE_WS_GATHERING", "false").lower() == "true"
+    LOG_WS_EVENTS = os.getenv("LOG_WS_EVENTS", "false").lower() == "true"
     ENABLE_BTC_SNIPER = os.getenv("ENABLE_BTC_SNIPER", "false").lower() == "true"
     
     try:

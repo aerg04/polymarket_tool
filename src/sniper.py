@@ -40,7 +40,7 @@ class SniperStrategy:
                         # ANTI-LIQUIDITY DRAIN PROTECTIONS
                         # 1. We consider the market in RESOLUTION if time_left < 15.0 or negative.
                         # Do not execute stop loss during resolution because orderbook is cleared.
-                        if time_left < 10.0:
+                        if time_left < 0:
                             continue
                             
                         # 2. Prevent Stop Loss on artificially bad quotes if spread goes huge
@@ -50,34 +50,20 @@ class SniperStrategy:
                                 continue
 
                         if buy_price and best_bid is not None:
-                            # Assume SL is an absolute drop or price floor. Let's use a percentage drop: 
-                            # if price drops by SL * buy_price (e.g. SL = 0.2 means 20% drop from buy)
-                            # OR if price drops below absolute SL (e.g. SL = 0.5 means any price below 50c). 
-                            # We implement percentage drop if SL <= 1.0, e.g. SL=0.15 for 15% drop.
-                            # Just to be safe, if best_bid <= SL, or loss > SL percentage. Let's just use absolute SL (trigger if best_bid <= SL) 
-                            # User said "number between 0 and 1" -> this matches polymarket prices nicely (e.g. Stop Loss at 0.50c).
-                            # If it's a fixed value, we check best_bid <= sl.
-                            # Wait, "a sl to the sniper, that would be on the .env a number between 0 and 1"
-                            # Let's check both: if best_bid <= sl (absolute floor) OR if best_bid <= buy_price * (1 - sl) (percentage drop).
-                            # I will use percentage drop: A SL of 0.2 (20%).
-                            sl_price = sl if sl > 0 else 0
-                            
-                            # We trigger if we hit absolute price `sl`, OR a fractional drop `buy_price - sl`.
-                            # The safest interpretation for Polymarket is that the user enters the absolute price floor, e.g. 0.5.
-                            # But wait, maybe the user means `buy_price - sl`. Let's just trigger if `best_bid <= sl` (fixed price).
-                            # But what if they enter `0.1` expecting 10 cents drop? We'll trigger if `best_bid <= buy_price - sl`.
-                            # I'll implement `best_bid <= (buy_price - sl)` as absolute amount drop, and `best_bid <= buy_price * (1-sl)` for percent. Let's just do `loss_ratio >= sl`.
-                            # "a sl of 0.1" -> 10% loss. Let's use percentage.
-                            # Actually, a stop loss on Polymarket is often just the target price. I'll use absolute probability price drop: buy at 0.8, SL = 0.5, we sell if drops below 0.5. Since it's a number between 0 and 1! If they want 0.5, it sells at 0.5. So `best_bid <= sl`.
-                            # But what if buy_price was already < sl? Then it triggers instantly.
+                            # SL is an absolute drop or price floor. Let's use a percentage drop: 
                             # Let's trigger if `best_bid <= buy_price - sl`. If buy is 0.80 and SL is 0.20, we sell at 0.60. This is the most logical "amount to lose".
-                            
+                            # core SL
                             if best_bid <= (buy_price - sl):
                                 self.sl_triggered.add(market_id)
                                 question = data.get("question", "Unknown Market")
                                 outcome = data.get("outcome", "Unknown Option")
-                                logger.info(f"STOP LOSS HIT for {market_id} ({outcome})! Buy: {buy_price}, Current Bid: {best_bid}, SL drop: {sl}")
-                                msg = f"🛑 **STOP LOSS TRIGGERED**\nMarket: `{question}`\nOutcome: `{outcome}`\nToken: `{market_id}`\nBuy Price: ${buy_price:.3f}\nExit Bid: ${best_bid:.3f}"
+                                
+                                # Close the paper trade in the database
+                                trade_id, realized_pnl = await Database.close_paper_trade_by_asset(market_id, best_bid)
+                                pnl_str = f"${realized_pnl:.3f}" if realized_pnl else "N/A"
+                                
+                                logger.info(f"STOP LOSS HIT for {market_id} ({outcome})! Buy: {buy_price}, Current Bid: {best_bid}, SL drop: {sl}, PNL: {pnl_str}")
+                                msg = f"🛑 **STOP LOSS TRIGGERED**\nMarket: `{question}`\nOutcome: `{outcome}`\nToken: `{market_id}`\nBuy Price: ${buy_price:.3f}\nExit Bid: ${best_bid:.3f}\nRealized PNL: {pnl_str}"
                                 asyncio.create_task(self.notifier.send_alert(msg))
                                 
                                 if data.get("live_trade_executed") and self.trader:
@@ -95,6 +81,7 @@ class SniperStrategy:
                 trigger_time = Config.SNIPER_TRIGGER_SECONDS
                 
                 # We trigger within a 2-second window
+                #Core execution
                 if (trigger_time - 1.0) <= time_left <= (trigger_time + 1.0):
                     if 0.75 <= best_ask <= 0.99:
                         self.live_markets[market_id]["traded"] = True
@@ -107,7 +94,7 @@ class SniperStrategy:
                         logger.info(f"SNIPER TRIGGERED! Market: {question} | Outcome: {outcome} | Ask: {best_ask} | Time Left: {time_left:.2f}s")
                         
                         triggered_trades.append(
-                            (current_time, market_id, best_ask, seconds_left_int)
+                            (current_time, market_id, best_ask, seconds_left_int, getattr(Config, "SNIPER_LIVE_TRADE", False))
                         )
                         
                         msg_prefix = "🚀 **REAL SNIPER TRADE**" if getattr(Config, "SNIPER_LIVE_TRADE", False) else "🎯 **SNIPER PAPER TRADE**"
@@ -118,7 +105,7 @@ class SniperStrategy:
                             asyncio.create_task(self.trader.execute_copy_trade(market_id, "Sniper Target", best_ask, "BUY"))
             
             for trade in triggered_trades:
-                await Database.log_paper_trade(trade[0], trade[1], trade[2], trade[3])
+                await Database.log_paper_trade(trade[0], trade[1], trade[2], trade[3], trade[4])
 
     async def pnl_resolution_loop(self):
         """Periodically checks unresolved paper trades and updates their PNL using the Gamma API."""
@@ -131,8 +118,7 @@ class SniperStrategy:
                     continue
 
                 async with aiohttp.ClientSession() as session:
-                    for rowid, asset_id, buy_price in unresolved:
-                        parent_market_id = await Database.get_parent_market_id(asset_id)
+                    for rowid, asset_id, buy_price, parent_market_id in unresolved:
                         if not parent_market_id:
                             continue
                             
@@ -143,7 +129,7 @@ class SniperStrategy:
                             async with session.get(url) as response:
                                 if response.status == 200:
                                     data = await response.json()
-                                    if data.get("closed") and data.get("endDate"):
+                                    if data.get("closed"):
                                         token_prices = data.get("outcomePrices", "[]")
                                         if isinstance(token_prices, str):
                                             token_prices = json.loads(token_prices)

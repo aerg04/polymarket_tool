@@ -6,6 +6,7 @@ import websockets
 import aiohttp
 from websockets.exceptions import ConnectionClosed
 from .database import Database
+from .config import Config
 
 logger = logging.getLogger("PolymarketWS")
 
@@ -132,13 +133,15 @@ class WSClient:
                 if best_bid is not None:
                     self.live_markets[market_id]["best_bid"] = best_bid
 
-            await Database.log_best_bid_ask(ts, market_id, best_bid, best_ask, spread)
+            if Config.LOG_WS_EVENTS:
+                await Database.log_best_bid_ask(ts, market_id, best_bid, best_ask, spread)
 
         elif event_type == "last_trade_price":
             price = data.get("price")
             side = data.get("side")
             size = data.get("size")
-            await Database.log_trade(ts, market_id, price, side, size)
+            if Config.LOG_WS_EVENTS:
+                await Database.log_trade(ts, market_id, price, side, size)
 
         elif event_type == "price_change":
             changes = data.get("price_changes", [])
@@ -151,12 +154,14 @@ class WSClient:
                 if self.active_tokens and item_market_id not in self.active_tokens and item_market_id != "UNKNOWN":
                     continue
 
-                await Database.log_price_change(ts, item_market_id, price, size, side)
+                if Config.LOG_WS_EVENTS:
+                    await Database.log_price_change(ts, item_market_id, price, size, side)
 
         elif event_type == "tick_size_change":
             old_tick = data.get("old_tick_size")
             new_tick = data.get("new_tick_size")
-            await Database.log_tick_size_change(ts, market_id, old_tick, new_tick)
+            if Config.LOG_WS_EVENTS:
+                await Database.log_tick_size_change(ts, market_id, old_tick, new_tick)
             
     async def fetch_crypto_tokens(self) -> list:
         tokens = []
