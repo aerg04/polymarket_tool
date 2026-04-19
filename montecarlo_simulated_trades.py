@@ -18,14 +18,12 @@ def run_montecarlo(df, num_simulations=10000, trades_per_sim=1000, initial_capit
     for name, group in grouped:
         group_name = name
         
-        # Extract profits and buy prices based on the new CSV structure
+        # Extract realized PnL which will be used directly as the multiplier
         profits_per_share = group['realized_pnl'].values
-        buy_prices = group['price'].values
         
-        # Calculate ROI per trade (profit per dollar invested)
-        # Avoid division by zero
-        buy_prices_safe = np.where(buy_prices == 0, 1e-6, buy_prices)
-        rois = profits_per_share / buy_prices_safe
+        # The realized_pnl is already absolute cents of win/loss per share, 
+        # so it acts as the multiplier (0.05 win implies 5% win per unit, etc.)
+        rois = profits_per_share
         
         num_trades_in_group = len(group)
         if num_trades_in_group == 0:
@@ -187,7 +185,7 @@ def run_montecarlo(df, num_simulations=10000, trades_per_sim=1000, initial_capit
 
 def main():
     parser = argparse.ArgumentParser(description="Run Monte Carlo simulation on simulated trades.")
-    parser.add_argument('--file', type=str, default='paper_trades.csv', help='Path to the CSV dataset')
+    parser.add_argument('--file', type=str, default='paper_trades2.csv', help='Path to the CSV dataset')
     parser.add_argument('--sims', type=int, default=10000, help='Number of simulations per group')
     parser.add_argument('--trades', type=int, default=100, help='Number of trades per simulation')
     parser.add_argument('--position-pct', type=float, default=0.10, help='Position size as a percentage of capital (e.g. 0.10 for 10%%)')
